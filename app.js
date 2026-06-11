@@ -248,7 +248,8 @@ function getParent(id) {
 }
 
 function getOffsetKey(node) {
-  if (!node || node.id === state.tree.id) return "";
+  if (!node) return "";
+  if (node.id === state.tree.id) return `root|${getNodeTitle(node)}`;
   const path = getNumberPath(node.id);
   return path ? `${path}|${getNodeTitle(node)}` : "";
 }
@@ -466,6 +467,10 @@ function applyManualOffsets(layout) {
 function layoutTree() {
   const layout = new Map();
   layout.set(state.tree.id, { x: CENTER_X, y: CENTER_Y, side: 0, depth: 0 });
+  if (isNodeCollapsed(state.tree)) {
+    state.layout = layout;
+    return;
+  }
 
   const assign = (node, side, depth, topY) => {
     const leaves = leafCount(node);
@@ -1056,7 +1061,11 @@ function centerOnNode(id, smooth = true) {
 }
 
 function fitView() {
-  const positions = [...state.layout.values()];
+  const positions = [];
+  walkVisible(state.tree, (node) => {
+    const pos = state.layout.get(node.id);
+    if (pos) positions.push(pos);
+  });
   if (!positions.length) return;
   const padding = 180;
   const minX = Math.min(...positions.map((pos) => pos.x)) - padding;
