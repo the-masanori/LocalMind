@@ -319,6 +319,7 @@ function isInSubtree(rootId, targetId) {
 function canReparentNode(sourceId, targetId) {
   if (!sourceId || !targetId || sourceId === targetId || sourceId === state.tree.id) return false;
   if (!findNode(sourceId) || !findNode(targetId)) return false;
+  if (getParent(sourceId)?.id === targetId) return false;
   return !isInSubtree(sourceId, targetId);
 }
 
@@ -1106,7 +1107,7 @@ function suppressNextNodeClick() {
 }
 
 function setNodeDropTarget(targetId) {
-  if (!state.drag || state.drag.type !== "node" || state.drag.mode !== "reparent" || state.drag.dropTargetId === targetId) return;
+  if (!state.drag || state.drag.type !== "node" || state.drag.dropTargetId === targetId) return;
   if (state.drag.dropTargetId) {
     getNodeElement(state.drag.dropTargetId)?.classList.remove("is-drop-target");
   }
@@ -1154,7 +1155,6 @@ function startNodeDrag(event, node, item) {
   event.stopPropagation();
   state.drag = {
     type: "node",
-    mode: event.altKey ? "reparent" : "move",
     id: event.pointerId,
     nodeId: node.id,
     nodeIds: getSubtreeIds(node.id),
@@ -1186,9 +1186,7 @@ function handleNodeDragMove(event) {
   getDragElements(drag).forEach((item) => {
     item.style.transform = transform;
   });
-  if (drag.mode === "reparent") {
-    setNodeDropTarget(getDropTargetIdAtPoint(event.clientX, event.clientY, drag.nodeId));
-  }
+  setNodeDropTarget(getDropTargetIdAtPoint(event.clientX, event.clientY, drag.nodeId));
 }
 
 function finishNodeDrag(event) {
@@ -1206,19 +1204,13 @@ function finishNodeDrag(event) {
   event.stopPropagation();
   suppressNextNodeClick();
 
-  if (drag.mode === "move") {
-    const dx = (event.clientX - drag.startX) / state.view.zoom;
-    const dy = (event.clientY - drag.startY) / state.view.zoom;
-    if (!moveNodeBranch(drag.nodeId, dx, dy)) {
-      render();
-      focusCanvas();
-    }
+  if (targetId && reparentNode(drag.nodeId, targetId)) {
     return;
   }
 
-  if (!targetId || !reparentNode(drag.nodeId, targetId)) {
-    state.selectedId = drag.nodeId;
-    state.editingId = null;
+  const dx = (event.clientX - drag.startX) / state.view.zoom;
+  const dy = (event.clientY - drag.startY) / state.view.zoom;
+  if (!moveNodeBranch(drag.nodeId, dx, dy)) {
     render();
     focusCanvas();
   }
