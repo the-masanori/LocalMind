@@ -294,7 +294,7 @@ button {
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  max-width: 240px;
+  max-width: 280px;
   min-width: 74px;
   min-height: 40px;
   padding: 9px 13px;
@@ -406,6 +406,29 @@ button {
   width: 100%;
 }
 
+.node-title.is-numbered {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.node-number {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.node-title-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
 .node-comment {
   display: block;
   overflow: hidden;
@@ -435,6 +458,10 @@ button {
 
 .node.is-root .node-comment {
   color: rgba(255, 255, 255, 0.72);
+}
+
+.node.is-root .node-number {
+  color: rgba(255, 255, 255, 0.86);
 }
 
 .node.is-root .node-meta {

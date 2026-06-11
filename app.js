@@ -9,7 +9,7 @@ const CENTER_X = SURFACE_WIDTH / 2;
 const CENTER_Y = SURFACE_HEIGHT / 2;
 const LEVEL_GAP = 230;
 const ROW_GAP = 88;
-const MIN_ZOOM = 0.35;
+const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 1.8;
 const NODE_DRAG_THRESHOLD = 7;
 
@@ -464,6 +464,10 @@ function applyManualOffsets(layout) {
   });
 }
 
+function getLevelGap() {
+  return state.labelMode === "numbered" ? 320 : LEVEL_GAP;
+}
+
 function layoutTree() {
   const layout = new Map();
   layout.set(state.tree.id, { x: CENTER_X, y: CENTER_Y, side: 0, depth: 0 });
@@ -473,9 +477,10 @@ function layoutTree() {
   }
 
   const assign = (node, side, depth, topY) => {
+    const levelGap = getLevelGap();
     const leaves = leafCount(node);
     const subtreeHeight = Math.max(1, leaves) * ROW_GAP;
-    const x = CENTER_X + side * depth * LEVEL_GAP;
+    const x = CENTER_X + side * depth * levelGap;
     const y = topY + subtreeHeight / 2;
     layout.set(node.id, { x, y, side, depth });
     if (isNodeCollapsed(node)) return;
@@ -557,14 +562,25 @@ function renderLinks(node) {
 function nodeWidth(node) {
   if (node.id === state.tree.id) return 150;
   const longestLine = getDisplayLines(node).reduce((max, line) => Math.max(max, line.length), 0);
-  return Math.min(240, Math.max(92, longestLine * 12 + 34));
+  const maxWidth = state.labelMode === "numbered" ? 280 : 240;
+  return Math.min(maxWidth, Math.max(92, longestLine * 12 + 34));
+}
+
+function estimateLineRows(text, width) {
+  const charsPerLine = Math.max(4, Math.floor(Math.max(48, width) / 12));
+  return Math.max(1, Math.ceil(String(text || "").length / charsPerLine));
 }
 
 function nodeHeight(node) {
+  const width = nodeWidth(node);
+  const titleRows = estimateLineRows(getDisplayTitle(node), width - 28);
   const commentCount = getNodeComments(node).length;
   const collapsedRows = isNodeCollapsed(node) && node.children.length ? 1 : 0;
   const base = node.id === state.tree.id ? 50 : 40;
-  return Math.min(124, base + (commentCount ? 8 : 0) + Math.min(commentCount, 4) * 15 + collapsedRows * 16);
+  return Math.min(
+    156,
+    base + (titleRows - 1) * 17 + (commentCount ? 8 : 0) + Math.min(commentCount, 4) * 15 + collapsedRows * 16
+  );
 }
 
 function getNumberPath(id) {
@@ -586,6 +602,12 @@ function getDisplayTitle(node) {
   if (state.labelMode !== "numbered" || node.id === state.tree.id) return title;
   const numberPath = getNumberPath(node.id);
   return numberPath ? `${numberPath}. ${title}` : title;
+}
+
+function getDisplayNumber(node) {
+  if (state.labelMode !== "numbered" || node.id === state.tree.id) return "";
+  const numberPath = getNumberPath(node.id);
+  return numberPath ? `${numberPath}.` : "";
 }
 
 function getDisplayLines(node) {
@@ -682,7 +704,19 @@ function renderNodes() {
       label.className = "node-label";
       const title = document.createElement("span");
       title.className = "node-title";
-      title.textContent = getDisplayTitle(node);
+      const numberPrefix = getDisplayNumber(node);
+      if (numberPrefix) {
+        title.classList.add("is-numbered");
+        const number = document.createElement("span");
+        number.className = "node-number";
+        number.textContent = numberPrefix;
+        const titleText = document.createElement("span");
+        titleText.className = "node-title-text";
+        titleText.textContent = getNodeTitle(node);
+        title.append(number, titleText);
+      } else {
+        title.textContent = getNodeTitle(node);
+      }
       label.append(title);
       getNodeComments(node).forEach((comment) => {
         const commentLine = document.createElement("span");
@@ -1061,17 +1095,25 @@ function centerOnNode(id, smooth = true) {
 }
 
 function fitView() {
-  const positions = [];
+  const bounds = [];
   walkVisible(state.tree, (node) => {
     const pos = state.layout.get(node.id);
-    if (pos) positions.push(pos);
+    if (!pos) return;
+    const width = nodeWidth(node);
+    const height = nodeHeight(node);
+    bounds.push({
+      left: pos.x - width / 2,
+      right: pos.x + width / 2,
+      top: pos.y - height / 2,
+      bottom: pos.y + height / 2,
+    });
   });
-  if (!positions.length) return;
+  if (!bounds.length) return;
   const padding = 180;
-  const minX = Math.min(...positions.map((pos) => pos.x)) - padding;
-  const maxX = Math.max(...positions.map((pos) => pos.x)) + padding;
-  const minY = Math.min(...positions.map((pos) => pos.y)) - padding;
-  const maxY = Math.max(...positions.map((pos) => pos.y)) + padding;
+  const minX = Math.min(...bounds.map((bound) => bound.left)) - padding;
+  const maxX = Math.max(...bounds.map((bound) => bound.right)) + padding;
+  const minY = Math.min(...bounds.map((bound) => bound.top)) - padding;
+  const maxY = Math.max(...bounds.map((bound) => bound.bottom)) + padding;
   const rect = els.viewport.getBoundingClientRect();
   const zoom = clamp(Math.min(rect.width / (maxX - minX), rect.height / (maxY - minY)), MIN_ZOOM, 1.2);
   state.view.zoom = zoom;
