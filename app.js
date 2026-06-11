@@ -1158,6 +1158,39 @@ function getDropTargetIdAtPoint(clientX, clientY, sourceId) {
   return canReparentNode(sourceId, targetId) ? targetId : null;
 }
 
+function getRectOverlapArea(a, b) {
+  const width = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+  const height = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  return width * height;
+}
+
+function getDropTargetIdByOverlap(drag) {
+  const sourceRect = drag.item.getBoundingClientRect();
+  const sourceArea = sourceRect.width * sourceRect.height;
+  let bestTargetId = null;
+  let bestOverlap = 0;
+
+  els.nodeLayer.querySelectorAll(".node").forEach((candidate) => {
+    const targetId = candidate.dataset.id;
+    if (!canReparentNode(drag.nodeId, targetId)) return;
+
+    const targetRect = candidate.getBoundingClientRect();
+    const overlap = getRectOverlapArea(sourceRect, targetRect);
+    const targetArea = targetRect.width * targetRect.height;
+    const threshold = Math.max(120, Math.min(sourceArea, targetArea) * 0.18);
+    if (overlap >= threshold && overlap > bestOverlap) {
+      bestTargetId = targetId;
+      bestOverlap = overlap;
+    }
+  });
+
+  return bestTargetId;
+}
+
+function getDropTargetIdForDrag(drag, clientX, clientY) {
+  return getDropTargetIdByOverlap(drag) || getDropTargetIdAtPoint(clientX, clientY, drag.nodeId);
+}
+
 function startNodeDrag(event, node, item) {
   if (event.button !== 0 || node.id === state.tree.id || state.editingId || isTypingTarget(event.target)) return;
   event.preventDefault();
@@ -1195,7 +1228,7 @@ function handleNodeDragMove(event) {
   getDragElements(drag).forEach((item) => {
     item.style.transform = transform;
   });
-  setNodeDropTarget(getDropTargetIdAtPoint(event.clientX, event.clientY, drag.nodeId));
+  setNodeDropTarget(getDropTargetIdForDrag(drag, event.clientX, event.clientY));
 }
 
 function finishNodeDrag(event) {
@@ -1203,7 +1236,7 @@ function finishNodeDrag(event) {
   if (event.pointerId !== undefined && state.drag.id !== event.pointerId) return;
   const drag = state.drag;
   const wasActive = drag.active;
-  const targetId = wasActive ? drag.dropTargetId || getDropTargetIdAtPoint(event.clientX, event.clientY, drag.nodeId) : null;
+  const targetId = wasActive ? drag.dropTargetId || getDropTargetIdForDrag(drag, event.clientX, event.clientY) : null;
   clearNodeDragVisual(drag);
   state.drag = null;
   releaseNodePointerCapture(drag.item, event.pointerId);
