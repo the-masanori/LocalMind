@@ -2,6 +2,7 @@ const STORAGE_KEY = "localmind.markdown.v1";
 const LAYOUT_MODE_KEY = "localmind.layoutMode.v1";
 const LABEL_MODE_KEY = "localmind.labelMode.v1";
 const POSITIONS_KEY = "localmind.positions.v1";
+const COLLAPSED_KEY = "localmind.collapsed.v1";
 const SURFACE_WIDTH = 4200;
 const SURFACE_HEIGHT = 3000;
 const CENTER_X = SURFACE_WIDTH / 2;
@@ -13,14 +14,18 @@ const MAX_ZOOM = 1.8;
 const NODE_DRAG_THRESHOLD = 7;
 
 const defaultMarkdown = `# 新しいマインドマップ
+> Shift+Enterで2行目以降をコメントとして残せます
 - 目的
+  > まず何を整理するかを書く
   - すばやく整理する
   - Markdownで保存する
 - アイデア
+  > 折りたたみたい項目はノード右上のボタンで切り替え
   - Enterで編集
   - Ctrl+Enterで同階層
   - Tabで子ノード
-- 次の一手`;
+- 次の一手
+  > 必要な作業をここに集める`;
 
 const els = {
   viewport: document.getElementById("canvasViewport"),
@@ -50,6 +55,7 @@ let state = {
   history: { past: [], future: [], limit: 100 },
   view: { x: 0, y: 0, zoom: 1 },
   manualOffsets: loadManualOffsets(),
+  collapsedKeys: loadCollapsedKeys(),
   drag: null,
   suppressClick: false,
 };
@@ -126,8 +132,21 @@ function loadManualOffsets() {
   }
 }
 
+function loadCollapsedKeys() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(COLLAPSED_KEY) || "[]");
+    return new Set(Array.isArray(raw) ? raw.filter((key) => typeof key === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
 function cloneManualOffsets(offsets = state.manualOffsets) {
   return new Map([...offsets.entries()].map(([key, value]) => [key, { x: value.x, y: value.y }]));
+}
+
+function cloneCollapsedKeys(keys = state.collapsedKeys) {
+  return new Set([...keys]);
 }
 
 function cloneTree(node) {
@@ -145,6 +164,7 @@ function createSnapshot() {
     layoutMode: state.layoutMode,
     labelMode: state.labelMode,
     manualOffsets: cloneManualOffsets(),
+    collapsedKeys: cloneCollapsedKeys(),
   };
 }
 
@@ -154,6 +174,7 @@ function restoreSnapshot(snapshot) {
   state.layoutMode = normalizeLayoutMode(snapshot.layoutMode);
   state.labelMode = normalizeLabelMode(snapshot.labelMode);
   state.manualOffsets = cloneManualOffsets(snapshot.manualOffsets || new Map());
+  state.collapsedKeys = cloneCollapsedKeys(snapshot.collapsedKeys || new Set());
   state.editingId = null;
   state.markdownDirty = false;
   localStorage.setItem(LAYOUT_MODE_KEY, state.layoutMode);
@@ -199,6 +220,12 @@ function walk(node, visitor, parent = null, depth = 0, index = 0) {
   node.children.forEach((child, childIndex) => walk(child, visitor, node, depth + 1, childIndex));
 }
 
+function walkVisible(node, visitor, parent = null, depth = 0, index = 0) {
+  visitor(node, parent, depth, index);
+  if (isNodeCollapsed(node)) return;
+  node.children.forEach((child, childIndex) => walkVisible(child, visitor, node, depth + 1, childIndex));
+}
+
 function rebuildParents() {
   state.parentById = new Map();
   walk(state.tree, (node, parent) => {
@@ -231,6 +258,18 @@ function getManualOffset(node) {
   return key ? state.manualOffsets.get(key) : null;
 }
 
+function isNodeCollapsed(node) {
+  const key = getOffsetKey(node);
+  return Boolean(key && state.collapsedKeys.has(key));
+}
+
+function setNodeCollapsed(node, collapsed) {
+  const key = getOffsetKey(node);
+  if (!key) return;
+  if (collapsed) state.collapsedKeys.add(key);
+  else state.collapsedKeys.delete(key);
+}
+
 function getCurrentOffsetKeys() {
   const keys = new Set();
   walk(state.tree, (node) => {
@@ -240,11 +279,23 @@ function getCurrentOffsetKeys() {
   return keys;
 }
 
+function pruneCollapsedKeys() {
+  const keys = getCurrentOffsetKeys();
+  [...state.collapsedKeys.keys()].forEach((key) => {
+    if (!keys.has(key)) state.collapsedKeys.delete(key);
+  });
+}
+
 function pruneManualOffsets() {
   const keys = getCurrentOffsetKeys();
   [...state.manualOffsets.keys()].forEach((key) => {
     if (!keys.has(key)) state.manualOffsets.delete(key);
   });
+}
+
+function saveCollapsedState() {
+  pruneCollapsedKeys();
+  localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...state.collapsedKeys]));
 }
 
 function saveManualOffsets() {
@@ -275,6 +326,24 @@ function countNodes() {
   let count = 0;
   walk(state.tree, () => {
     count += 1;
+  });
+  return count;
+}
+
+function countVisibleNodes() {
+  let count = 0;
+  walkVisible(state.tree, () => {
+    count += 1;
+  });
+  return count;
+}
+
+function countDescendants(node) {
+  let count = 0;
+  node.children.forEach((child) => {
+    walk(child, () => {
+      count += 1;
+    });
   });
   return count;
 }
@@ -378,7 +447,7 @@ function splitRootChildren() {
 
 function leafCount(node) {
   const ownRows = Math.max(1, Math.ceil(nodeHeight(node) / ROW_GAP));
-  if (!node.children.length) return ownRows;
+  if (!node.children.length || isNodeCollapsed(node)) return ownRows;
   return Math.max(ownRows, node.children.reduce((sum, child) => sum + leafCount(child), 0));
 }
 
@@ -403,6 +472,7 @@ function layoutTree() {
     const x = CENTER_X + side * depth * LEVEL_GAP;
     const y = topY + subtreeHeight / 2;
     layout.set(node.id, { x, y, side, depth });
+    if (isNodeCollapsed(node)) return;
 
     let cursor = topY;
     node.children.forEach((child) => {
@@ -447,7 +517,9 @@ function render() {
   renderNodes();
 
   syncMarkdownFromTree();
-  els.nodeCount.textContent = `${countNodes()}ノード`;
+  const totalNodes = countNodes();
+  const visibleNodes = countVisibleNodes();
+  els.nodeCount.textContent = visibleNodes === totalNodes ? `${totalNodes}ノード` : `${visibleNodes}/${totalNodes}ノード`;
   updateLayoutModeControls();
   updateLabelModeControls();
   updateHistoryControls();
@@ -456,9 +528,11 @@ function render() {
 }
 
 function renderLinks(node) {
+  if (isNodeCollapsed(node)) return;
   const from = state.layout.get(node.id);
   node.children.forEach((child) => {
     const to = state.layout.get(child.id);
+    if (!from || !to) return;
     const side = to.side || 1;
     const startX = from.x + side * nodeWidth(node) / 2;
     const endX = to.x - side * nodeWidth(child) / 2;
@@ -482,8 +556,9 @@ function nodeWidth(node) {
 
 function nodeHeight(node) {
   const commentCount = getNodeComments(node).length;
+  const collapsedRows = isNodeCollapsed(node) && node.children.length ? 1 : 0;
   const base = node.id === state.tree.id ? 50 : 40;
-  return Math.min(108, base + (commentCount ? 8 : 0) + Math.min(commentCount, 4) * 15);
+  return Math.min(124, base + (commentCount ? 8 : 0) + Math.min(commentCount, 4) * 15 + collapsedRows * 16);
 }
 
 function getNumberPath(id) {
@@ -512,16 +587,19 @@ function getDisplayLines(node) {
 }
 
 function renderNodes() {
-  walk(state.tree, (node) => {
+  walkVisible(state.tree, (node) => {
     const pos = state.layout.get(node.id);
+    if (!pos) return;
     const width = nodeWidth(node);
     const height = nodeHeight(node);
+    const collapsed = isNodeCollapsed(node);
     const item = document.createElement("div");
     item.className = [
       "node",
       node.id === state.tree.id ? "is-root" : "",
       node.id === state.selectedId ? "is-selected" : "",
       node.id === state.editingId ? "is-editing" : "",
+      collapsed ? "is-collapsed" : "",
     ]
       .filter(Boolean)
       .join(" ");
@@ -575,6 +653,25 @@ function renderNodes() {
         input.select();
       });
     } else {
+      if (node.children.length) {
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "node-toggle";
+        toggle.textContent = collapsed ? "+" : "−";
+        toggle.title = collapsed ? "展開" : "折りたたみ";
+        toggle.setAttribute("aria-label", `${getNodeTitle(node)}を${collapsed ? "展開" : "折りたたみ"}`);
+        toggle.addEventListener("pointerdown", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
+        toggle.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          toggleCollapsed(node.id);
+        });
+        item.append(toggle);
+      }
+
       const label = document.createElement("span");
       label.className = "node-label";
       const title = document.createElement("span");
@@ -587,6 +684,12 @@ function renderNodes() {
         commentLine.textContent = comment;
         label.append(commentLine);
       });
+      if (collapsed) {
+        const meta = document.createElement("span");
+        meta.className = "node-meta";
+        meta.textContent = `${countDescendants(node)}項目を非表示`;
+        label.append(meta);
+      }
       item.append(label);
     }
 
@@ -611,6 +714,7 @@ function renderNodes() {
 function saveLocal() {
   localStorage.setItem(STORAGE_KEY, toMarkdown(state.tree));
   saveManualOffsets();
+  saveCollapsedState();
   els.saveStatus.textContent = state.markdownDirty ? "MD編集中" : "保存済み";
 }
 
@@ -660,6 +764,20 @@ function setLabelMode(mode) {
   showMessage(nextMode === "numbered" ? "番号表示にしました" : "通常表示にしました");
 }
 
+function toggleCollapsed(id = state.selectedId) {
+  const node = findNode(id);
+  if (!node || !node.children.length) return;
+  const nextCollapsed = !isNodeCollapsed(node);
+  recordHistory();
+  setNodeCollapsed(node, nextCollapsed);
+  state.selectedId = node.id;
+  state.editingId = null;
+  render();
+  centerOnNode(node.id, false);
+  focusCanvas();
+  showMessage(nextCollapsed ? "折りたたみました" : "展開しました");
+}
+
 function selectNode(id, shouldCenter = false) {
   if (!findNode(id)) return;
   state.selectedId = id;
@@ -696,6 +814,7 @@ function addChild() {
   recordHistory();
   const child = createNode("新しいノード");
   node.children.push(child);
+  setNodeCollapsed(node, false);
   state.selectedId = child.id;
   state.editingId = child.id;
   render();
@@ -753,7 +872,9 @@ function indentSelected() {
   if (index <= 0) return;
   recordHistory();
   const [node] = parent.children.splice(index, 1);
-  parent.children[index - 1].children.push(node);
+  const nextParent = parent.children[index - 1];
+  nextParent.children.push(node);
+  setNodeCollapsed(nextParent, false);
   render();
   centerOnNode(node.id);
 }
@@ -783,6 +904,7 @@ function reparentNode(sourceId, targetId) {
   recordHistory();
   const [moved] = currentParent.children.splice(sourceIndex, 1);
   target.children.push(moved);
+  setNodeCollapsed(target, false);
   state.selectedId = moved.id;
   state.editingId = null;
   render();
@@ -837,6 +959,10 @@ function selectRelative(direction) {
     return;
   }
   if (direction === "child") {
+    if (isNodeCollapsed(node) && node.children.length) {
+      toggleCollapsed(node.id);
+      return;
+    }
     if (node.children[0]) selectNode(node.children[0].id, true);
     return;
   }
@@ -1187,6 +1313,10 @@ function handleGlobalKeydown(event) {
     case "F2":
       event.preventDefault();
       startInlineEdit();
+      break;
+    case " ":
+      event.preventDefault();
+      toggleCollapsed();
       break;
     case "Escape":
       event.preventDefault();

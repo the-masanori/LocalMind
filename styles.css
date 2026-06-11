@@ -355,6 +355,38 @@ button {
   background: #203050;
 }
 
+.node-toggle {
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--accent-strong);
+  box-shadow: 0 5px 12px rgba(23, 32, 51, 0.12);
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+  touch-action: none;
+}
+
+.node-toggle:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.node.is-root .node-toggle {
+  border-color: rgba(255, 255, 255, 0.54);
+  background: #fff;
+  color: #172033;
+}
+
 .node-label {
   display: flex;
   flex-direction: column;
@@ -386,6 +418,16 @@ button {
   text-overflow: ellipsis;
 }
 
+.node-meta {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
 .node.is-root .node-label {
   font-size: 16px;
   font-weight: 750;
@@ -393,6 +435,10 @@ button {
 
 .node.is-root .node-comment {
   color: rgba(255, 255, 255, 0.72);
+}
+
+.node.is-root .node-meta {
+  color: rgba(255, 255, 255, 0.86);
 }
 
 .node-edit {
