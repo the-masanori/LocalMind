@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    >
+    <title>LocalMind</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <h1>LocalMind</h1>
+        </div>
+        <div class="toolbar" aria-label="操作">
+          <button type="button" class="icon-button" data-action="undo" title="元に戻す" aria-label="元に戻す" disabled>
+            <span aria-hidden="true">↶</span>
+          </button>
+          <button type="button" class="icon-button" data-action="redo" title="やり直す" aria-label="やり直す" disabled>
+            <span aria-hidden="true">↷</span>
+          </button>
+          <span class="toolbar-divider" aria-hidden="true"></span>
+          <div class="mode-switch" role="group" aria-label="伸び方">
+            <button type="button" class="mode-option" data-layout-mode="balanced" aria-pressed="true">左右</button>
+            <button type="button" class="mode-option" data-layout-mode="right" aria-pressed="false">右方向</button>
+          </div>
+          <span class="toolbar-divider" aria-hidden="true"></span>
+          <div class="mode-switch label-mode-switch" role="group" aria-label="表示">
+            <button type="button" class="mode-option" data-label-mode="plain" aria-pressed="true">通常</button>
+            <button type="button" class="mode-option" data-label-mode="numbered" aria-pressed="false">番号</button>
+          </div>
+          <span class="toolbar-divider" aria-hidden="true"></span>
+          <button type="button" class="icon-button" data-action="add-child" title="子ノードを追加" aria-label="子ノードを追加">
+            <span aria-hidden="true">＋</span>
+          </button>
+          <button type="button" class="icon-button" data-action="add-sibling" title="同階層に追加" aria-label="同階層に追加">
+            <span aria-hidden="true">↵</span>
+          </button>
+          <button type="button" class="icon-button" data-action="delete-node" title="削除" aria-label="削除">
+            <span aria-hidden="true">⌫</span>
+          </button>
+          <span class="toolbar-divider" aria-hidden="true"></span>
+          <button type="button" class="icon-button" data-action="zoom-out" title="縮小" aria-label="縮小">
+            <span aria-hidden="true">−</span>
+          </button>
+          <button type="button" class="text-button" data-action="reset-view">100%</button>
+          <button type="button" class="icon-button" data-action="zoom-in" title="拡大" aria-label="拡大">
+            <span aria-hidden="true">＋</span>
+          </button>
+          <button type="button" class="icon-button" data-action="fit-view" title="全体表示" aria-label="全体表示">
+            <span aria-hidden="true">◎</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="map-panel" aria-label="マインドマップ">
+          <div class="canvas-toolbar">
+            <div class="status-strip" aria-live="polite">
+              <span id="nodeCount">0 nodes</span>
+              <span id="saveStatus">local</span>
+            </div>
+          </div>
+          <div id="canvasViewport" class="canvas-viewport" tabindex="0" aria-label="マップキャンバス">
+            <div id="mapSurface" class="map-surface">
+              <svg id="linkLayer" class="link-layer" aria-hidden="true"></svg>
+              <div id="nodeLayer" class="node-layer"></div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="markdown-panel" aria-label="Markdown">
+          <div class="panel-head">
+            <h2>Markdown</h2>
+            <div class="panel-actions">
+              <button type="button" class="text-button" data-action="copy-markdown">コピー</button>
+              <button type="button" class="text-button" data-action="apply-markdown">反映</button>
+            </div>
+          </div>
+          <textarea id="markdownText" spellcheck="false" aria-label="Markdown"></textarea>
+          <div class="message-line" id="messageLine" role="status" aria-live="polite"></div>
+        </aside>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
