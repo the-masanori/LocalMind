@@ -232,6 +232,12 @@ button {
   flex: 0 0 auto;
 }
 
+.layout-mode-switch {
+  grid-template-columns: 1fr 1fr 1fr;
+  width: 180px;
+  min-width: 180px;
+}
+
 .label-mode-switch {
   width: 102px;
   min-width: 102px;
@@ -637,9 +643,10 @@ button {
             <span aria-hidden="true">↷</span>
           </button>
           <span class="toolbar-divider" aria-hidden="true"></span>
-          <div class="mode-switch" role="group" aria-label="伸び方">
+          <div class="mode-switch layout-mode-switch" role="group" aria-label="伸び方">
             <button type="button" class="mode-option" data-layout-mode="balanced" aria-pressed="true">左右</button>
             <button type="button" class="mode-option" data-layout-mode="right" aria-pressed="false">右方向</button>
+            <button type="button" class="mode-option" data-layout-mode="down" aria-pressed="false">下方向</button>
           </div>
           <span class="toolbar-divider" aria-hidden="true"></span>
           <div class="mode-switch label-mode-switch" role="group" aria-label="表示">
@@ -712,11 +719,13 @@ const CENTER_X = SURFACE_WIDTH / 2;
 const CENTER_Y = SURFACE_HEIGHT / 2;
 const LEVEL_GAP = 230;
 const ROW_GAP = 88;
+const DOWN_LEVEL_GAP = 148;
+const DOWN_COLUMN_GAP = 42;
 const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 1.8;
 const NODE_DRAG_THRESHOLD = 7;
 
-const defaultMarkdown = `# 新しいマインドマップ
+const legacyDefaultMarkdown = `# 新しいマインドマップ
 > Shift+Enterで2行目以降をコメントとして残せます
 - 目的
   > まず何を整理するかを書く
@@ -729,6 +738,30 @@ const defaultMarkdown = `# 新しいマインドマップ
   - Tabで子ノード
 - 次の一手
   > 必要な作業をここに集める`;
+
+const defaultMarkdown = `# LocalMindの使い方
+> Markdownを書くと、左側にマインドマップとして表示されます
+- Markdownを書く
+  > 右側のMarkdown欄を編集して「反映」を押します
+  - # で中心トピックを作る
+  - - でノードを追加する
+  - 半角スペース2つで一段下げる
+- ノードを操作する
+  > 左側のマップ上で選択・編集・追加・削除できます
+  - Enterで選択ノードを編集
+  - Tabで子ノードを追加
+  - Ctrl+EnterまたはCommand+Enterで同階層に追加
+  - DeleteまたはBackspaceで削除
+- 表示を切り替える
+  > 上部のボタンで見え方を変えられます
+  - 左右・右方向・下方向を選ぶ
+  - 通常・番号を選ぶ
+  - 全体表示でマップ全体を収める
+- 保存と再開
+  > 内容はこのブラウザに自動保存されます
+  - コピーでMarkdownを取り出す
+  - 貼り付けて「反映」で再開する
+  - 2行目以降はコメントとして残せる`;
 
 const els = {
   viewport: document.getElementById("canvasViewport"),
@@ -746,7 +779,7 @@ const els = {
 };
 
 let state = {
-  tree: parseMarkdown(localStorage.getItem(STORAGE_KEY) || defaultMarkdown),
+  tree: parseMarkdown(loadInitialMarkdown()),
   selectedId: null,
   editingId: null,
   layout: new Map(),
@@ -814,8 +847,14 @@ function appendNodeComment(node, comment) {
   node.text = `${normalizeNodeText(node.text) || "無題"}\n${nextComment}`;
 }
 
+function loadInitialMarkdown() {
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (!stored || stored === legacyDefaultMarkdown) return defaultMarkdown;
+  return stored;
+}
+
 function normalizeLayoutMode(value) {
-  return value === "right" ? "right" : "balanced";
+  return ["balanced", "right", "down"].includes(value) ? value : "balanced";
 }
 
 function normalizeLabelMode(value) {
@@ -1171,6 +1210,14 @@ function getLevelGap() {
   return state.labelMode === "numbered" ? 320 : LEVEL_GAP;
 }
 
+function getDownColumnGap() {
+  return state.labelMode === "numbered" ? 56 : DOWN_COLUMN_GAP;
+}
+
+function getDownLevelGap() {
+  return state.labelMode === "numbered" ? 160 : DOWN_LEVEL_GAP;
+}
+
 function layoutTree() {
   const layout = new Map();
   layout.set(state.tree.id, { x: CENTER_X, y: CENTER_Y, side: 0, depth: 0 });
@@ -1206,8 +1253,53 @@ function layoutTree() {
     });
   };
 
+  const assignDown = () => {
+    const branchWidths = new Map();
+    const measure = (node) => {
+      const ownWidth = nodeWidth(node);
+      if (!node.children.length || isNodeCollapsed(node)) {
+        branchWidths.set(node.id, ownWidth);
+        return ownWidth;
+      }
+      const childGap = getDownColumnGap();
+      const childrenWidth = node.children.reduce((sum, child, index) => {
+        return sum + measure(child) + (index > 0 ? childGap : 0);
+      }, 0);
+      const width = Math.max(ownWidth, childrenWidth);
+      branchWidths.set(node.id, width);
+      return width;
+    };
+
+    const place = (node, depth, leftX) => {
+      const width = branchWidths.get(node.id) || nodeWidth(node);
+      layout.set(node.id, {
+        x: leftX + width / 2,
+        y: CENTER_Y + depth * getDownLevelGap(),
+        side: 0,
+        depth,
+      });
+      if (!node.children.length || isNodeCollapsed(node)) return;
+
+      const childGap = getDownColumnGap();
+      const childrenWidth = node.children.reduce((sum, child, index) => {
+        return sum + (branchWidths.get(child.id) || nodeWidth(child)) + (index > 0 ? childGap : 0);
+      }, 0);
+      let cursor = leftX + (width - childrenWidth) / 2;
+      node.children.forEach((child) => {
+        const childWidth = branchWidths.get(child.id) || nodeWidth(child);
+        place(child, depth + 1, cursor);
+        cursor += childWidth + childGap;
+      });
+    };
+
+    const totalWidth = measure(state.tree);
+    place(state.tree, 0, CENTER_X - totalWidth / 2);
+  };
+
   if (state.layoutMode === "right") {
     assignSide(state.tree.children, 1);
+  } else if (state.layoutMode === "down") {
+    assignDown();
   } else {
     const { left, right } = splitRootChildren();
     assignSide(right, 1);
@@ -1247,15 +1339,18 @@ function renderLinks(node) {
   node.children.forEach((child) => {
     const to = state.layout.get(child.id);
     if (!from || !to) return;
+    const isDownLayout = state.layoutMode === "down";
     const side = to.side || 1;
-    const startX = from.x + side * nodeWidth(node) / 2;
-    const endX = to.x - side * nodeWidth(child) / 2;
-    const controlGap = Math.max(58, Math.abs(endX - startX) * 0.5);
+    const startX = isDownLayout ? from.x : from.x + side * nodeWidth(node) / 2;
+    const startY = isDownLayout ? from.y + nodeHeight(node) / 2 : from.y;
+    const endX = isDownLayout ? to.x : to.x - side * nodeWidth(child) / 2;
+    const endY = isDownLayout ? to.y - nodeHeight(child) / 2 : to.y;
+    const controlGap = Math.max(58, (isDownLayout ? Math.abs(endY - startY) : Math.abs(endX - startX)) * 0.5);
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute(
-      "d",
-      `M ${startX} ${from.y} C ${startX + side * controlGap} ${from.y}, ${endX - side * controlGap} ${to.y}, ${endX} ${to.y}`
-    );
+    const d = isDownLayout
+      ? `M ${startX} ${startY} C ${startX} ${startY + controlGap}, ${endX} ${endY - controlGap}, ${endX} ${endY}`
+      : `M ${startX} ${startY} C ${startX + side * controlGap} ${startY}, ${endX - side * controlGap} ${endY}, ${endX} ${endY}`;
+    path.setAttribute("d", d);
     path.setAttribute("class", child.id === state.selectedId ? "link is-selected" : "link");
     els.linkLayer.append(path);
     renderLinks(child);
@@ -1494,7 +1589,12 @@ function setLayoutMode(mode) {
   localStorage.setItem(LAYOUT_MODE_KEY, nextMode);
   render();
   fitView();
-  showMessage(nextMode === "right" ? "右方向モードにしました" : "左右モードにしました");
+  const messages = {
+    balanced: "左右モードにしました",
+    right: "右方向モードにしました",
+    down: "下方向モードにしました",
+  };
+  showMessage(messages[nextMode]);
 }
 
 function setLabelMode(mode) {
